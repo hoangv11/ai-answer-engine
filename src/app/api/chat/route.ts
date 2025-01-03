@@ -13,10 +13,11 @@ const logger = new Logger("scraper");
 
 export async function POST(req: Request) {
   try {
-    const { message, messages } = await req.json();
+    const { message, messages, chatId } = await req.json();
 
     console.log("message received", message);
     console.log("messages", messages);
+    console.log("chatId received", chatId);
 
     const url = message.match(urlPattern);
 
@@ -61,10 +62,41 @@ export async function POST(req: Request) {
     console.log(llmMessages);
     const response = await getGroqResponse(llmMessages);
 
+    const updatedMessages = [
+      ...messages,
+      { role: "user", content: message },
+      { role: "assistant", content: response },
+    ];
+
+    await saveConversations(chatId, updatedMessages);
+
     return NextResponse.json({ message: response });
   } catch (error) {
     console.error("Chat API error:", error);
     return NextResponse.json({ message: "Error", error: String(error) });
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const chatId = searchParams.get("chatId");
+
+    if (!chatId) {
+      return NextResponse.json(
+        { error: "Chat ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const conversation = await getConversations(chatId);
+    return NextResponse.json({ messages: conversation });
+  } catch (error) {
+    console.error("Error retrieving chat history:", error);
+    return NextResponse.json(
+      { error: "Failed to retrieve chat history" },
+      { status: 500 }
+    );
   }
 }
 
