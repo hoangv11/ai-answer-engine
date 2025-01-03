@@ -3,13 +3,16 @@
 // Refer to the Groq SDK here on how to use an LLM: https://www.npmjs.com/package/groq-sdk
 // Refer to the Cheerio docs here on how to parse HTML: https://cheerio.js.org/docs/basics/loading
 // Refer to Puppeteer docs here: https://pptr.dev/guides/what-is-puppeteer
+import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
+    const { message } = await req.json();
 
+    console.log("message received", message);
 
+    return NextResponse.json({ message: message });
   } catch (error) {
-
-
+    return NextResponse.json({ message: "Error" });
   }
 }
