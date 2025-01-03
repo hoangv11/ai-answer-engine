@@ -13,6 +13,7 @@ export default function Home() {
     { role: "assistant", content: "Hello! How can I help you today?" },
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSend = async () => {
     if (!message.trim()) return;
@@ -34,6 +35,19 @@ export default function Home() {
         body: JSON.stringify({ message, messages }),
       });
 
+      if (!response.ok) {
+        const errorData = await response.json();
+
+        if (response.status === 429) {
+          const errorMessage = `${errorData.message} Try again in ${errorData.timeRemaining} seconds.`;
+          setError(errorMessage);
+          return;
+        }
+
+        throw new Error("Failed to send message");
+      }
+
+      setError(null);
       // TODO: Handle the response from the chat API to display the AI response in the UI
       const data = await response.json();
       console.log("data:", data);
@@ -100,6 +114,13 @@ export default function Home() {
                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
                 </div>
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="flex justify-center mb-4">
+              <div className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500">
+                {error}
               </div>
             </div>
           )}

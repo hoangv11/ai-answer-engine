@@ -16,7 +16,7 @@ const redis = new Redis({
 
 const rateLimit = new Ratelimit({
   redis: redis,
-  limiter: Ratelimit.slidingWindow(10, "60 s"),
+  limiter: Ratelimit.slidingWindow(10, "30 s"),
   analytics: true,
 });
 
@@ -28,7 +28,15 @@ export async function middleware(request: NextRequest) {
 
     const response = success
       ? NextResponse.next()
-      : NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+      : NextResponse.json(
+          {
+            error: "Rate limit exceeded",
+            message: "Free tier limit reached. Please try again later.",
+            reset: reset,
+            timeRemaining: Math.ceil((reset - Date.now()) / 1000),
+          },
+          { status: 429 }
+        );
 
     response.headers.set("X-RateLimit-Limit", limit.toString());
     response.headers.set("X-RateLimit-Remaining", remaining.toString());
