@@ -2,6 +2,7 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import { Redis } from "@upstash/redis";
 import { Logger } from "./logger";
+import puppeteer, { Browser } from "puppeteer";
 
 const logger = new Logger("scraper");
 
@@ -12,6 +13,26 @@ const redis = new Redis({
 
 const CACHE_TTL = 7 * (24 * 60 * 60); // 7 days
 const MAX_CACHE_SIZE = 1024000;
+
+let browser: Browser | null = null;
+
+async function getBrowser(): Promise<Browser> {
+  if (!browser) {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+    logger.info("Puppeteer browser launched");
+  }
+  return browser;
+}
+
+process.on("exit", async () => { 
+  if (browser) {
+    await browser.close();
+    logger.info("Puppeteer browser closed");
+  }
+});
 
 export const urlPattern =
   /https?:\/\/(www.)?[-a-zA-Z0-9@:%.+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%+.~#?&//=]*)/gi;
@@ -29,8 +50,20 @@ export async function scrapeUrl(url: string) {
     }
     logger.info(`Cache miss for url: ${url}`);
 
-    const response = await axios.get(url);
-    const $ = cheerio.load(response.data);
+    let html: string;
+
+    const requiresDynamic = requiresDynamicScraping(url);
+
+    if(requiresDynamic) {
+      const pageContent = await scrapeWithPuppeteer(url);
+      html = pageContent;
+    } else {
+      logger.info(`Using Axios to scrape static content for url: ${url}`);
+      const response = await axios.get(url);
+      html = response.data;
+    }
+
+    const $ = cheerio.load(html);
 
     $("script").remove();
     $("style").remove();
@@ -216,5 +249,46 @@ async function cacheContent(
     );
   } catch (error) {
     logger.error("Error caching content", error);
+  }
+}
+
+function requiresDynamicScraping(url: string): boolean {
+  const dynamicSites = [
+    "linkedin.com",
+  ];
+
+  return dynamicSites.some((site) => url.includes(site));
+}
+
+async function scrapeWithPuppeteer(url: string): Promise<string> {
+  const browserInstance = await getBrowser();
+  const page = await browserInstance.newPage();
+
+  try {
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/112.0.0.0 Safari/537.36"
+    );
+
+    await page.setViewport({ width: 1280, height: 800 });
+
+    logger.info(`Navigating to ${url}`);
+    const response = await page.goto(url, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
+    });
+
+    if (!response || !response.ok()) {
+      throw new Error(`Failed to load page, status: ${response?.status()}`);
+    }
+    const content = await page.content();
+    return content;
+  } catch (error) {
+    logger.error(`Puppeteer error for url ${url}:`, error);
+    throw error;
+  } finally {
+    await page.close();
+    logger.info(`Page closed for url: ${url}`);
   }
 }
